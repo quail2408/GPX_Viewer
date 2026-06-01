@@ -1,0 +1,681 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GPX Map Viewer</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <style>
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f4f6f8;
+      color: #17202a;
+      overflow: hidden;
+    }
+
+    .app {
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      flex: 0 0 auto;
+      padding: 16px 22px;
+      background: #ffffff;
+      border-bottom: 1px solid #dde3ea;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 14px;
+      justify-content: space-between;
+      z-index: 1000;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    input[type="file"] {
+      max-width: 280px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 14px;
+      background: #17202a;
+      color: white;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    main {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 340px;
+    }
+
+    .map-wrap {
+      min-width: 0;
+      min-height: 0;
+      position: relative;
+    }
+
+    #map {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      background: #dbeafe;
+    }
+
+    aside {
+      min-height: 0;
+      background: #ffffff;
+      border-left: 1px solid #dde3ea;
+      padding: 18px;
+      overflow: auto;
+    }
+
+    .card {
+      border: 1px solid #dde3ea;
+      border-radius: 14px;
+      padding: 14px;
+      margin-bottom: 14px;
+      background: #fff;
+    }
+
+    .label {
+      color: #667085;
+      font-size: 13px;
+      margin-bottom: 4px;
+    }
+
+    .value {
+      font-size: 18px;
+      font-weight: 700;
+      word-break: break-word;
+    }
+
+    .hint {
+      color: #667085;
+      line-height: 1.5;
+      font-size: 14px;
+    }
+
+    .error {
+      color: #b42318;
+      font-weight: 600;
+    }
+
+    #heightProfile {
+      width: 100%;
+      height: 160px;
+      margin-top: 12px;
+      border: 1px solid #dde3ea;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #f8fafc;
+    }
+
+    #heightProfile svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .profile-empty {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12px;
+      color: #667085;
+      font-size: 13px;
+      text-align: center;
+    }
+
+    .route-summary-empty {
+      color: #667085;
+      font-size: 14px;
+    }
+
+    .route-summary-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      word-break: break-word;
+    }
+
+    .route-summary-metrics {
+      color: #667085;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 850px) {
+      body {
+        overflow: auto;
+      }
+
+      .app {
+        min-height: 100vh;
+        height: auto;
+      }
+
+      main {
+        grid-template-columns: 1fr;
+        grid-template-rows: 65vh auto;
+      }
+
+      aside {
+        border-left: 0;
+        border-top: 1px solid #dde3ea;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>GPX Map Viewer</h1>
+      <div class="controls">
+        <input id="gpxFile" type="file" accept=".gpx,application/gpx+xml,application/xml,text/xml" multiple />
+        <button id="clearBtn" disabled>Clear map</button>
+      </div>
+    </header>
+
+    <main>
+      <div class="map-wrap">
+        <div id="map"></div>
+      </div>
+
+      <aside>
+        <div class="card">
+          <div class="label">Uploaded routes summary</div>
+          <div id="routeSummaryList" class="route-summary-empty">No GPX loaded</div>
+        </div>
+
+        <div class="card">
+          <div class="label">Hovered route</div>
+          <div id="hoverName" class="value">None</div>
+          <p class="hint">
+            Distance: <strong id="hoverDistance">-</strong><br>
+            Elevation gain: <strong id="hoverElevation">-</strong><br>
+            Elevation loss: <strong id="hoverLoss">-</strong><br>
+            Estimated hiking time: <strong id="hoverTime">-</strong>
+          </p>
+          <div id="heightProfile" class="profile-empty">No height profile selected</div>
+        </div>
+
+        <p id="status" class="hint">
+          Choose one or more GPX files from your computer. Files are processed only in your browser.
+        </p>
+      </aside>
+    </main>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <script>
+    const fileInput = document.getElementById("gpxFile");
+    const clearBtn = document.getElementById("clearBtn");
+    const routeSummaryListEl = document.getElementById("routeSummaryList");
+    const hoverNameEl = document.getElementById("hoverName");
+    const hoverDistanceEl = document.getElementById("hoverDistance");
+    const hoverElevationEl = document.getElementById("hoverElevation");
+    const hoverLossEl = document.getElementById("hoverLoss");
+    const hoverTimeEl = document.getElementById("hoverTime");
+    const heightProfileEl = document.getElementById("heightProfile");
+    const statusEl = document.getElementById("status");
+
+    const routeColors = ["#e11d48", "#2563eb", "#16a34a", "#f97316", "#7c3aed", "#0891b2", "#be123c", "#4d7c0f"];
+    let loadedRoutes = [];
+    let routeFeatureGroup = null;
+
+    const map = L.map("map", {
+      zoomControl: true,
+      preferCanvas: true
+    }).setView([51.1657, 10.4515], 6);
+
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap contributors"
+    }).addTo(map);
+
+    routeFeatureGroup = L.featureGroup().addTo(map);
+
+    setTimeout(() => map.invalidateSize(), 0);
+    window.addEventListener("resize", () => map.invalidateSize());
+
+    fileInput.addEventListener("change", async (event) => {
+      const files = Array.from(event.target.files);
+      if (files.length === 0) return;
+
+      clearMap(false);
+      setStatus(`Reading ${files.length} GPX file${files.length === 1 ? "" : "s"}...`);
+
+      const failedFiles = [];
+
+      for (const file of files) {
+        try {
+          const text = await file.text();
+          const points = parseGpx(text);
+
+          if (points.length < 2) {
+            throw new Error("not enough track or route coordinates");
+          }
+
+          addRoute(file.name, points);
+        } catch (error) {
+          failedFiles.push(`${file.name}: ${error.message}`);
+        }
+      }
+
+      if (loadedRoutes.length === 0) {
+        clearMap();
+        setStatus(
+          failedFiles.length > 0
+            ? `No GPX routes could be loaded. ${failedFiles.join("; ")}`
+            : "No GPX routes could be loaded.",
+          true
+        );
+        return;
+      }
+
+      fitAllRoutes();
+      updateRouteSummaryList();
+      clearBtn.disabled = false;
+
+      if (failedFiles.length > 0) {
+        setStatus(`Loaded ${loadedRoutes.length} route${loadedRoutes.length === 1 ? "" : "s"}. Failed: ${failedFiles.join("; ")}`, true);
+      } else {
+        setStatus(`Loaded ${loadedRoutes.length} GPX route${loadedRoutes.length === 1 ? "" : "s"} successfully.`);
+      }
+    });
+
+    clearBtn.addEventListener("click", () => {
+      clearMap();
+      fileInput.value = "";
+      setStatus("Choose one or more GPX files from your computer. Files are processed only in your browser.");
+    });
+
+    function parseGpx(gpxText) {
+      const parser = new DOMParser();
+      const xml = parser.parseFromString(gpxText, "application/xml");
+
+      if (xml.querySelector("parsererror")) {
+        throw new Error("This file could not be parsed as valid GPX/XML.");
+      }
+
+      const trackPoints = getPointsByTagName(xml, "trkpt");
+      const routePoints = getPointsByTagName(xml, "rtept");
+      const waypointPoints = getPointsByTagName(xml, "wpt");
+
+      if (trackPoints.length >= 2) return trackPoints;
+      if (routePoints.length >= 2) return routePoints;
+      return waypointPoints;
+    }
+
+    function getPointsByTagName(xml, tagName) {
+      return Array.from(xml.getElementsByTagNameNS("*", tagName))
+        .map((node) => {
+          const lat = Number(node.getAttribute("lat"));
+          const lon = Number(node.getAttribute("lon"));
+          const elevationNode = node.getElementsByTagNameNS("*", "ele")[0];
+          const elevation = elevationNode ? Number(elevationNode.textContent) : null;
+
+          return Number.isFinite(lat) && Number.isFinite(lon)
+            ? { lat, lon, elevation: Number.isFinite(elevation) ? elevation : null }
+            : null;
+        })
+        .filter(Boolean);
+    }
+
+    function addRoute(name, points) {
+      map.invalidateSize();
+
+      const color = routeColors[loadedRoutes.length % routeColors.length];
+      const latLngs = points.map((point) => L.latLng(point.lat, point.lon));
+      const distanceKm = calculateDistanceKm(points);
+      const elevationGainM = calculateElevationGainM(points);
+      const elevationLossM = calculateElevationLossM(points);
+      const profilePoints = buildElevationProfile(points);
+      const hikingTimeHours = estimateHikingTimeHours(distanceKm, elevationGainM);
+      const route = { name, points, distanceKm, elevationGainM, elevationLossM, profilePoints, hikingTimeHours, color };
+
+      const routeLayer = L.polyline(latLngs, {
+        color,
+        weight: 6,
+        opacity: 1,
+        lineCap: "round",
+        lineJoin: "round"
+      }).bindPopup(
+        `${escapeHtml(name)}<br>${distanceKm.toFixed(2)} km<br>${Math.round(elevationGainM)} m gain<br>${Math.round(elevationLossM)} m loss<br>${formatHours(hikingTimeHours)}`
+      );
+
+      routeLayer.on("mouseover", () => {
+        routeLayer.setStyle({ weight: 9 });
+        showHoveredRoute(route);
+      });
+
+      routeLayer.on("mouseout", () => {
+        routeLayer.setStyle({ weight: 6 });
+        clearHoveredRoute();
+      });
+
+      const startMarker = L.circleMarker(latLngs[0], {
+        radius: 6,
+        color,
+        fillColor: color,
+        fillOpacity: 1,
+        weight: 3
+      }).bindPopup(`${escapeHtml(name)}<br>Start`);
+
+      const finishMarker = L.circleMarker(latLngs[latLngs.length - 1], {
+        radius: 6,
+        color,
+        fillColor: "#ffffff",
+        fillOpacity: 1,
+        weight: 3
+      }).bindPopup(`${escapeHtml(name)}<br>Finish`);
+
+      routeFeatureGroup.addLayer(routeLayer);
+      routeFeatureGroup.addLayer(startMarker);
+      routeFeatureGroup.addLayer(finishMarker);
+
+      loadedRoutes.push(route);
+    }
+
+    function fitAllRoutes() {
+      map.invalidateSize();
+
+      if (!routeFeatureGroup || routeFeatureGroup.getLayers().length === 0) return;
+
+      const bounds = routeFeatureGroup.getBounds();
+      if (bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
+        setTimeout(() => map.invalidateSize(), 100);
+      }
+    }
+
+    function updateRouteSummaryList() {
+      if (loadedRoutes.length === 0) {
+        routeSummaryListEl.className = "route-summary-empty";
+        routeSummaryListEl.textContent = "No GPX loaded";
+        return;
+      }
+
+      const totals = loadedRoutes.reduce((summary, route) => {
+        summary.distanceKm += route.distanceKm;
+        summary.elevationGainM += route.elevationGainM;
+        summary.elevationLossM += route.elevationLossM;
+        summary.hikingTimeHours += route.hikingTimeHours;
+        return summary;
+      }, {
+        distanceKm: 0,
+        elevationGainM: 0,
+        elevationLossM: 0,
+        hikingTimeHours: 0
+      });
+
+      routeSummaryListEl.className = "";
+      routeSummaryListEl.innerHTML = `
+        <div class="route-summary-title">
+          ${loadedRoutes.length} route${loadedRoutes.length === 1 ? "" : "s"} loaded
+        </div>
+        <div class="route-summary-metrics">
+          Total distance: <strong>${totals.distanceKm.toFixed(2)} km</strong><br>
+          Total elevation gain: <strong>${Math.round(totals.elevationGainM).toLocaleString()} m</strong><br>
+          Total elevation loss: <strong>${Math.round(totals.elevationLossM).toLocaleString()} m</strong><br>
+          Total estimated hiking time: <strong>${formatHours(totals.hikingTimeHours)}</strong>
+        </div>
+      `;
+    }
+
+    function clearMap(resetStats = true) {
+      if (routeFeatureGroup) {
+        routeFeatureGroup.clearLayers();
+      }
+
+      loadedRoutes = [];
+      clearHoveredRoute();
+      clearBtn.disabled = true;
+
+      if (resetStats) {
+        updateRouteSummaryList();
+      }
+    }
+
+    function showHoveredRoute(route) {
+      hoverNameEl.innerHTML = `<span style="color:${route.color}">●</span> ${escapeHtml(route.name)}`;
+      hoverDistanceEl.textContent = `${route.distanceKm.toFixed(2)} km`;
+      hoverElevationEl.textContent = `${Math.round(route.elevationGainM).toLocaleString()} m`;
+      hoverLossEl.textContent = `${Math.round(route.elevationLossM).toLocaleString()} m`;
+      hoverTimeEl.textContent = formatHours(route.hikingTimeHours);
+      renderHeightProfile(route);
+    }
+
+    function clearHoveredRoute() {
+      hoverNameEl.textContent = "None";
+      hoverDistanceEl.textContent = "-";
+      hoverElevationEl.textContent = "-";
+      hoverLossEl.textContent = "-";
+      hoverTimeEl.textContent = "-";
+      heightProfileEl.className = "profile-empty";
+      heightProfileEl.textContent = "No height profile selected";
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>'"]/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "'": "&#39;",
+        '"': "&quot;"
+      }[char]));
+    }
+
+    function calculateDistanceKm(points) {
+      let total = 0;
+
+      for (let i = 1; i < points.length; i++) {
+        total += haversineKm(points[i - 1], points[i]);
+      }
+
+      return total;
+    }
+
+    function calculateElevationGainM(points) {
+      let gain = 0;
+
+      for (let i = 1; i < points.length; i++) {
+        const previousElevation = points[i - 1].elevation;
+        const currentElevation = points[i].elevation;
+
+        if (Number.isFinite(previousElevation) && Number.isFinite(currentElevation)) {
+          const difference = currentElevation - previousElevation;
+          if (difference > 0) gain += difference;
+        }
+      }
+
+      return gain;
+    }
+
+    function calculateElevationLossM(points) {
+      let loss = 0;
+
+      for (let i = 1; i < points.length; i++) {
+        const previousElevation = points[i - 1].elevation;
+        const currentElevation = points[i].elevation;
+
+        if (Number.isFinite(previousElevation) && Number.isFinite(currentElevation)) {
+          const difference = currentElevation - previousElevation;
+          if (difference < 0) loss += Math.abs(difference);
+        }
+      }
+
+      return loss;
+    }
+
+    function buildElevationProfile(points) {
+      const profile = [];
+      let distanceKm = 0;
+
+      for (let i = 0; i < points.length; i++) {
+        if (i > 0) {
+          distanceKm += haversineKm(points[i - 1], points[i]);
+        }
+
+        const elevation = points[i].elevation;
+        if (Number.isFinite(elevation)) {
+          profile.push({ distanceKm, elevation });
+        }
+      }
+
+      return profile;
+    }
+
+    function renderHeightProfile(route) {
+      const profile = route.profilePoints;
+
+      if (!profile || profile.length < 2) {
+        heightProfileEl.className = "profile-empty";
+        heightProfileEl.textContent = "No elevation data in this GPX file";
+        return;
+      }
+
+      const width = 280;
+      const height = 140;
+      const padding = { top: 14, right: 12, bottom: 26, left: 42 };
+      const minElevation = Math.min(...profile.map((point) => point.elevation));
+      const maxElevation = Math.max(...profile.map((point) => point.elevation));
+      const maxDistance = Math.max(...profile.map((point) => point.distanceKm));
+      const elevationRange = Math.max(1, maxElevation - minElevation);
+      const safeMaxDistance = Math.max(0.001, maxDistance);
+      const plotWidth = width - padding.left - padding.right;
+      const plotHeight = height - padding.top - padding.bottom;
+
+      const linePoints = profile.map((point) => {
+        const x = padding.left + (point.distanceKm / safeMaxDistance) * plotWidth;
+        const y = padding.top + ((maxElevation - point.elevation) / elevationRange) * plotHeight;
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      }).join(" ");
+
+      const areaPoints = `${padding.left},${height - padding.bottom} ${linePoints} ${width - padding.right},${height - padding.bottom}`;
+      const minLabel = `${Math.round(minElevation)} m`;
+      const maxLabel = `${Math.round(maxElevation)} m`;
+      const distanceLabel = `${route.distanceKm.toFixed(1)} km`;
+
+      heightProfileEl.className = "";
+      heightProfileEl.innerHTML = `
+        <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Height profile for ${escapeHtml(route.name)}">
+          <rect x="0" y="0" width="${width}" height="${height}" fill="#f8fafc"></rect>
+          <line x1="${padding.left}" y1="${height - padding.bottom}" x2="${width - padding.right}" y2="${height - padding.bottom}" stroke="#94a3b8" stroke-width="1"></line>
+          <line x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${height - padding.bottom}" stroke="#94a3b8" stroke-width="1"></line>
+          <polygon points="${areaPoints}" fill="${route.color}" opacity="0.16"></polygon>
+          <polyline points="${linePoints}" fill="none" stroke="${route.color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>
+          <text x="${padding.left - 6}" y="${padding.top + 4}" text-anchor="end" font-size="10" fill="#475569">${maxLabel}</text>
+          <text x="${padding.left - 6}" y="${height - padding.bottom + 4}" text-anchor="end" font-size="10" fill="#475569">${minLabel}</text>
+          <text x="${padding.left}" y="${height - 8}" text-anchor="start" font-size="10" fill="#475569">0 km</text>
+          <text x="${width - padding.right}" y="${height - 8}" text-anchor="end" font-size="10" fill="#475569">${distanceLabel}</text>
+        </svg>
+      `;
+    }
+
+    function estimateHikingTimeHours(distanceKm, elevationGainM) {
+      const flatWalkingHours = distanceKm / 5;
+      const climbingHours = elevationGainM / 600;
+      return flatWalkingHours + climbingHours;
+    }
+
+    function formatHours(hours) {
+      if (!Number.isFinite(hours) || hours <= 0) return "-";
+
+      const totalMinutes = Math.round(hours * 60);
+      const h = Math.floor(totalMinutes / 60);
+      const m = totalMinutes % 60;
+
+      if (h === 0) return `${m} min`;
+      if (m === 0) return `${h} h`;
+      return `${h} h ${m} min`;
+    }
+
+    function haversineKm(a, b) {
+      const radiusKm = 6371;
+      const dLat = toRad(b.lat - a.lat);
+      const dLon = toRad(b.lon - a.lon);
+      const lat1 = toRad(a.lat);
+      const lat2 = toRad(b.lat);
+
+      const h =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+
+      return 2 * radiusKm * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+    }
+
+    function toRad(degrees) {
+      return degrees * Math.PI / 180;
+    }
+
+    function setStatus(message, isError = false) {
+      statusEl.textContent = message;
+      statusEl.className = isError ? "hint error" : "hint";
+    }
+
+    function runTests() {
+      const samplePoints = [
+        { lat: 47.0, lon: 11.0, elevation: 1000 },
+        { lat: 47.01, lon: 11.01, elevation: 1120 },
+        { lat: 47.02, lon: 11.02, elevation: 1080 },
+        { lat: 47.03, lon: 11.03, elevation: 1210 }
+      ];
+
+      console.assert(calculateElevationGainM(samplePoints) === 250, "Elevation gain should be 250 m");
+      console.assert(calculateElevationLossM(samplePoints) === 40, "Elevation loss should be 40 m");
+      console.assert(calculateDistanceKm(samplePoints) > 0, "Distance should be greater than zero");
+      console.assert(buildElevationProfile(samplePoints).length === 4, "Elevation profile should include all elevated points");
+      console.assert(formatHours(1.5) === "1 h 30 min", "Time formatting should show hours and minutes");
+
+      const xml = `
+        <gpx version="1.1">
+          <trk><trkseg>
+            <trkpt lat="47.0" lon="11.0"><ele>1000</ele></trkpt>
+            <trkpt lat="47.1" lon="11.1"><ele>1100</ele></trkpt>
+          </trkseg></trk>
+        </gpx>`;
+      console.assert(parseGpx(xml).length === 2, "GPX parser should read two track points");
+    }
+
+    runTests();
+  </script>
+</body>
+</html>
