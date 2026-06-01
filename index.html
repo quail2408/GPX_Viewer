@@ -33,21 +33,34 @@
 
     header {
       flex: 0 0 auto;
-      padding: 16px 22px;
-      background: #ffffff;
+      padding: 18px 24px;
+      background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
       border-bottom: 1px solid #dde3ea;
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      gap: 14px;
+      gap: 16px;
       justify-content: space-between;
       z-index: 1000;
+      box-shadow: 0 1px 8px rgba(15, 23, 42, 0.06);
+    }
+
+    .brand {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
     }
 
     h1 {
       margin: 0;
-      font-size: 20px;
-      font-weight: 700;
+      font-size: 21px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      color: #667085;
+      font-size: 13px;
     }
 
     .controls {
@@ -57,11 +70,20 @@
       flex-wrap: wrap;
     }
 
-    input[type="file"] {
-      max-width: 280px;
+    #gpxFile {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
     }
 
-    button {
+    button,
+    .file-button {
       border: 0;
       border-radius: 10px;
       padding: 10px 14px;
@@ -69,11 +91,31 @@
       color: white;
       cursor: pointer;
       font-weight: 600;
+      font-size: inherit;
+      line-height: normal;
+      height: 40px;
     }
 
     button:disabled {
       opacity: 0.5;
       cursor: not-allowed;
+    }
+
+    .file-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      user-select: none;
+    }
+
+    .file-button:hover,
+    button:not(:disabled):hover {
+      background: #263445;
+    }
+
+    .file-button:focus-within {
+      outline: 2px solid #94a3b8;
+      outline-offset: 2px;
     }
 
     main {
@@ -180,6 +222,27 @@
       line-height: 1.6;
     }
 
+    .hut-icon {
+      background: transparent;
+      border: 0;
+    }
+
+    .hut-icon-inner {
+      width: 30px;
+      height: 30px;
+      border-radius: 999px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #92400e;
+      color: #ffffff;
+      border: 3px solid #ffffff;
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.35);
+      font-size: 22px;
+      line-height: 1;
+      font-weight: 700;
+    }
+
     @media (max-width: 850px) {
       body {
         overflow: auto;
@@ -205,9 +268,14 @@
 <body>
   <div class="app">
     <header>
-      <h1>GPX Map Viewer</h1>
+      <div class="brand">
+        <h1>GPX Map Viewer</h1>
+        <div class="subtitle">Upload routes, compare totals, and find huts.</div>
+      </div>
       <div class="controls">
+        <label class="file-button" for="gpxFile">Upload GPX files</label>
         <input id="gpxFile" type="file" accept=".gpx,application/gpx+xml,application/xml,text/xml" multiple />
+        <button id="toggleHutsBtn">Hide huts</button>
         <button id="clearBtn" disabled>Clear map</button>
       </div>
     </header>
@@ -247,6 +315,7 @@
   <script>
     const fileInput = document.getElementById("gpxFile");
     const clearBtn = document.getElementById("clearBtn");
+    const toggleHutsBtn = document.getElementById("toggleHutsBtn");
     const routeSummaryListEl = document.getElementById("routeSummaryList");
     const hoverNameEl = document.getElementById("hoverName");
     const hoverDistanceEl = document.getElementById("hoverDistance");
@@ -259,6 +328,8 @@
     const routeColors = ["#e11d48", "#2563eb", "#16a34a", "#f97316", "#7c3aed", "#0891b2", "#be123c", "#4d7c0f"];
     let loadedRoutes = [];
     let routeFeatureGroup = null;
+    let hutsVisible = true;
+    let hutLayerGroup = null;
 
     const map = L.map("map", {
       zoomControl: true,
@@ -271,6 +342,67 @@
     }).addTo(map);
 
     routeFeatureGroup = L.featureGroup().addTo(map);
+
+    map.createPane("hutPane");
+    map.getPane("hutPane").style.zIndex = 700;
+    map.getPane("hutPane").style.pointerEvents = "auto";
+
+    hutLayerGroup = L.layerGroup().addTo(map);
+
+    const hutIcon = L.divIcon({
+      className: "hut-icon",
+      html: `<div class="hut-icon-inner" aria-hidden="true">⌂</div>`,
+      iconSize: [30, 30],
+      iconAnchor: [15, 15],
+      popupAnchor: [0, -16]
+    });
+
+    const huts = [
+      {
+        name: "Kemptner Hütte",
+        lat: 47.313333,
+        lon: 10.327778,
+        elevation: "1,844 m",
+        website: "https://www.kemptner-huette.de/"
+      },
+      {
+        name: "Memminger Hütte",
+        lat: 47.200556,
+        lon: 10.478611,
+        elevation: "2,242 m",
+        website: "https://www.memmingerhuette.at/"
+      },
+      {
+        name: "Zammer Alm",
+        lat: 47.15372,
+        lon: 10.6217,
+        elevation: "1,775 m",
+        website: "https://www.zammer-alm.at/"
+      },
+      {
+        name: "Braunschweiger Hütte",
+        lat: 46.935278,
+        lon: 10.909167,
+        elevation: "2,759 m",
+        website: "https://www.braunschweiger-huette.at/"
+      },
+      {
+        name: "Martin-Busch-Hütte",
+        lat: 46.801111,
+        lon: 10.886944,
+        elevation: "2,501 m",
+        website: "https://dav-berlin.de/huetten-ueberblick-anfahrt/oetztal/martin-busch-huette/"
+      },
+      {
+        name: "Gasthof Neuratheis",
+        lat: 46.68471145629883,
+        lon: 10.932781219482422,
+        elevation: "Katharinaberg 40",
+        website: "https://www.booking.com/hotel/it/gasthof-neuratheis.de.html"
+      }
+    ];
+
+    addHutMarkers();
 
     setTimeout(() => map.invalidateSize(), 0);
     window.addEventListener("resize", () => map.invalidateSize());
@@ -326,6 +458,38 @@
       fileInput.value = "";
       setStatus("Choose one or more GPX files from your computer. Files are processed only in your browser.");
     });
+
+    toggleHutsBtn.addEventListener("click", () => {
+      hutsVisible = !hutsVisible;
+
+      if (hutsVisible) {
+        hutLayerGroup.addTo(map);
+        toggleHutsBtn.textContent = "Hide huts";
+      } else {
+        map.removeLayer(hutLayerGroup);
+        toggleHutsBtn.textContent = "Show huts";
+      }
+    });
+
+    function addHutMarkers() {
+      hutLayerGroup.clearLayers();
+
+      huts.forEach((hut) => {
+        L.marker([hut.lat, hut.lon], {
+          pane: "hutPane",
+          icon: hutIcon,
+          keyboard: true,
+          title: hut.name
+        })
+          .bindTooltip(hut.name, { direction: "top", offset: [0, -8] })
+          .bindPopup(`
+            <strong>${escapeHtml(hut.name)}</strong><br>
+            Elevation: ${escapeHtml(hut.elevation)}<br>
+            <a href="${escapeHtml(hut.website)}" target="_blank" rel="noopener noreferrer">Open website</a>
+          `)
+          .addTo(hutLayerGroup);
+      });
+    }
 
     function parseGpx(gpxText) {
       const parser = new DOMParser();
@@ -673,6 +837,14 @@
           </trkseg></trk>
         </gpx>`;
       console.assert(parseGpx(xml).length === 2, "GPX parser should read two track points");
+      console.assert(huts.length === 6, "Six hut markers should be configured");
+      console.assert(huts.every((hut) => Number.isFinite(hut.lat) && Number.isFinite(hut.lon)), "Every hut should have valid coordinates");
+      console.assert(huts.every((hut) => hut.website.startsWith("https://")), "Every hut should have an HTTPS website link");
+      console.assert(hutLayerGroup instanceof L.LayerGroup, "Huts should be managed by a dedicated Leaflet layer group");
+      console.assert(huts.find((hut) => hut.name === "Zammer Alm").lat === 47.15372, "Zammer Alm latitude should use corrected coordinates");
+      console.assert(huts.find((hut) => hut.name === "Zammer Alm").lon === 10.6217, "Zammer Alm longitude should use corrected coordinates");
+      console.assert(toggleHutsBtn.textContent === "Hide huts", "Hut toggle should start in the visible state");
+      console.assert(huts.some((hut) => hut.name === "Gasthof Neuratheis"), "Gasthof Neuratheis should be configured as a hut marker");
     }
 
     runTests();
